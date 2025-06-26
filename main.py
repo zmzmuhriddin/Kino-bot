@@ -4,56 +4,28 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
 )
-from telegram.ext.webhook import WebhookServer
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.getenv("PORT", 10000))
-
-# === Telegram Application ===
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-# === FastAPI ===
-fastapi_app = FastAPI()
-
-@fastapi_app.post("/webhook")
-async def webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, app.bot)
-    await app.process_update(update)
-    return {"ok": True}
-
-# === Webhook Setup ===
-@fastapi_app.on_event("startup")
-async def on_startup():
-    await app.bot.set_webhook(WEBHOOK_URL)
-
-@fastapi_app.on_event("shutdown")
-async def on_shutdown():
-    await app.bot.delete_webhook()
-
-# === Botni lokalda ishga tushirish (Render uchun kerak emas) ===
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:fastapi_app", host="0.0.0.0", port=PORT)
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
 CHANNELS = os.getenv("CHANNELS", "").split(",")
 DB_FILE = os.getenv("DB_FILE", "cinemaxuz.db")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.getenv("PORT", 10000))
+
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+fastapi_app = FastAPI()
 
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 
+# === SQL Tablelar ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
@@ -63,13 +35,11 @@ CREATE TABLE IF NOT EXISTS movies (
     views INTEGER DEFAULT 0
 )
 """)
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS categories (
     name TEXT PRIMARY KEY
 )
 """)
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
@@ -320,7 +290,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✉️ Xabar matnini yuboring.")
         return
 
-    # Foydalanuvchi uchun qidiruv
     movie = get_movie(text)
     if movie:
         update_movie_views(text)
@@ -338,18 +307,16 @@ async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         await update.message.reply_text(f"🎬 file_id: <code>{update.message.video.file_id}</code>", parse_mode="HTML")
 
-# === Bot va webhook ===
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+# === Handlers ===
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("admin", admin))
 app.add_handler(CallbackQueryHandler(button_handler))
 app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-fastapi_app = FastAPI()
-
+# === FastAPI Webhook ===
 @fastapi_app.post("/webhook")
-async def telegram_webhook(request: Request):
+async def webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, app.bot)
     await app.update_queue.put(update)
@@ -357,16 +324,12 @@ async def telegram_webhook(request: Request):
 
 @app.on_startup
 async def startup():
-    await app.bot.set_webhook(url=WEBHOOK_URL)
+    await app.bot.set_webhook(WEBHOOK_URL)
 
 @app.on_shutdown
 async def shutdown():
     await app.bot.delete_webhook()
 
 if __name__ == "__main__":
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL,
-        fastapi=fastapi_app
-        )
+    import uvicorn
+    uvicorn.run("main:fastapi_app", host="0.0.0.0", port=PORT)
