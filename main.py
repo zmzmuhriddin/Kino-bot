@@ -14,6 +14,37 @@ from telegram.ext.webhook import WebhookServer
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 10000))
+
+# === Telegram Application ===
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# === FastAPI ===
+fastapi_app = FastAPI()
+
+@fastapi_app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, app.bot)
+    await app.process_update(update)
+    return {"ok": True}
+
+# === Webhook Setup ===
+@fastapi_app.on_event("startup")
+async def on_startup():
+    await app.bot.set_webhook(WEBHOOK_URL)
+
+@fastapi_app.on_event("shutdown")
+async def on_shutdown():
+    await app.bot.delete_webhook()
+
+# === Botni lokalda ishga tushirish (Render uchun kerak emas) ===
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:fastapi_app", host="0.0.0.0", port=PORT)
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
 CHANNELS = os.getenv("CHANNELS", "").split(",")
 DB_FILE = os.getenv("DB_FILE", "cinemaxuz.db")
