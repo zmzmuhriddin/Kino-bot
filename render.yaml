@@ -3,18 +3,16 @@ services:
     name: cinemaxuz-bot
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    buildCommand: ""
+    startCommand: uvicorn main:fastapi_app --host=0.0.0.0 --port=10000
     envVars:
       - key: BOT_TOKEN
-        value: your_bot_token
+        value: YOUR_BOT_TOKEN
+      - key: WEBHOOK_URL
+        value: https://cinemaxuz-bot.onrender.com/webhook
       - key: ADMINS
         value: 5703922034,6764631404
       - key: CHANNELS
         value: @zokirov_muxriddin
       - key: DB_FILE
         value: cinemaxuz.db
-      - key: WEBHOOK_URL
-        value: https://your-app-name.onrender.com/webhook
-      - key: PORT
-        value: 10000
