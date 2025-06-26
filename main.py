@@ -4,12 +4,15 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+)
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
 )
 
+# === Load env ===
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -19,13 +22,10 @@ ADMINS = set(os.getenv("ADMINS", "").split(","))
 CHANNELS = os.getenv("CHANNELS", "").split(",")
 DB_FILE = os.getenv("DB_FILE", "cinemaxuz.db")
 
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-fastapi_app = FastAPI()
-
+# === DB Connection ===
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 
-# === SQL Tablelar ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
@@ -49,7 +49,14 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# === Funksiyalar ===
+# === Telegram Application ===
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# === FastAPI App ===
+fastapi_app = FastAPI()
+
+# =================== FUNCTIONAL ===================
+
 def add_user(user_id, username):
     with conn:
         conn.execute(
@@ -127,14 +134,15 @@ def update_movie_views(code):
             "UPDATE movies SET views = views + 1 WHERE code=?", (code,)
         )
 
-# === Holatlar ===
+# =================== STATES ===================
 adding_movie = {}
 deleting_movie = {}
 broadcasting = {}
 adding_category = {}
 deleting_category = {}
 
-# === Komandalar ===
+# =================== COMMANDS ===================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
@@ -166,6 +174,8 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text("👑 Admin panel:", reply_markup=markup)
+
+# =================== BUTTON HANDLER ===================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -211,6 +221,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🔎 Kino nomi yoki kodini yuboring.")
     elif data == "info":
         await query.message.reply_text("ℹ️ @CinemaxUz bot. Kinolarni ko‘rish uchun foydalaning.")
+
+# =================== TEXT HANDLER ===================
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -303,18 +315,22 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Kino topilmadi.")
 
+# =================== FILE ID HANDLER ===================
+
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         await update.message.reply_text(f"🎬 file_id: <code>{update.message.video.file_id}</code>", parse_mode="HTML")
 
-# === Handlers ===
+# =================== HANDLERS ===================
+
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("admin", admin))
 app.add_handler(CallbackQueryHandler(button_handler))
 app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-# === FastAPI Webhook ===
+# =================== WEBHOOK API ===================
+
 @fastapi_app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
@@ -322,13 +338,15 @@ async def webhook(request: Request):
     await app.update_queue.put(update)
     return {"ok": True}
 
-@app.on_startup
-async def startup():
+@fastapi_app.on_event("startup")
+async def on_startup():
     await app.bot.set_webhook(WEBHOOK_URL)
 
-@app.on_shutdown
-async def shutdown():
+@fastapi_app.on_event("shutdown")
+async def on_shutdown():
     await app.bot.delete_webhook()
+
+# =================== RUN ===================
 
 if __name__ == "__main__":
     import uvicorn
